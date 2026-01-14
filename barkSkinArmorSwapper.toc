@@ -1,0 +1,14 @@
+## Interface: 11505, 40400, 11504, 20505
+## Title: Barkskin Armor Manager
+## Author: Zanalia
+## Version: 1.0.0
+## Notes: Swap between armor sets, without the hassle of extreme changes to UI.
+## IconTexture: Interface\AddOns\barkSkinArmorSwapper\Resources\barkskin
+## OptionalDeps: 
+## RequiredDeps: 
+## SavedVariables: zas_ArmorList
+## DefaultState: Enabled
+
+
+bsk_Brain.lua
+bsk_UI.lua
