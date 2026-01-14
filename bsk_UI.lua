@@ -110,16 +110,21 @@ function addContent()
 		capeBox:SetPoint("CENTER", scrollContent, "TOP", -30, lastPosition-75) -- Position it in the center of the frame
 		capeBox.Text:SetText("Show Cape") -- Text next to the checkbox
 		
-		capeBox:SetChecked(zas_ArmorList[UnitName("player")][key]["cape"])
-		helmBox:SetChecked(zas_ArmorList[UnitName("player")][key]["hat"])
+		capeBox:SetChecked(zas_ArmorList[UnitName("player")][key]["cloakShown"])
+		helmBox:SetChecked(zas_ArmorList[UnitName("player")][key]["helmShown"])
 		------- SCRIPTS ------------
 		
-		capeBox:SetScript("OnClick", function(self) 
-			zas_ArmorList[UnitName("player")][key]["cape"] = self:GetChecked()
+		capeBox:SetScript("OnClick", function(self)
+			local isChecked = self:GetChecked()
+
+			zas_ArmorList[UnitName("player")][key]["cloakShown"] = isChecked
+			
 		end)
-		
-		helmBox:SetScript("OnClick", function(self) 
-			zas_ArmorList[UnitName("player")][key]["hat"] = self:GetChecked()
+
+		helmBox:SetScript("OnClick", function(self)
+			local isChecked = self:GetChecked()
+
+			zas_ArmorList[UnitName("player")][key]["helmShown"] = isChecked
 		end)
 		
 		saveBtn:SetScript("OnClick", function(self) 

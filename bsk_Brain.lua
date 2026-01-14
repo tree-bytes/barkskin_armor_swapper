@@ -53,9 +53,11 @@ function cmdFunc(str)
 		print(YELLOW.."HELP DESK")
 		print(RED.."Save set: |r/bskin save {name}")
 		print(RED.."Load set: |r/bskin load {name}")
-		print(RED.."Delete set: |r/bskin delete {name} "..YELLOW.."or |r/za remove {name}")
+		print(RED.."Delete set: |r/bskin delete {name} "..YELLOW.."or |r/bskin remove {name}")
 		print(RED.."View armor sets: |r/bskin list")
-		print(BLUE.."Note: addon can be used with macros!")
+		print(RED.."Change helm visibility: |r/bskin helm {set} {bool}")
+		print(RED.."Change cloak visibility: |r/bskin cloak {set} {bool}")
+		print(BLUE.."Note: {bool} can either be 1, 0, true, or false!")
 		return
 	end
 	
@@ -76,6 +78,12 @@ function cmdFunc(str)
     elseif (containsWord(words[1], "delete") or containsWord(words[1], "remove"))and words[2] then
 		deleteArmorSet(words[2])
 		addContent()
+	elseif containsWord(words[1], "helm") and words[2] and words[3] then
+		helm_visibility(words[2], words[3])
+		addContent()
+	elseif containsWord(words[1], "cloak") and words[2] and words[3] then
+		cloak_visibility(words[2], words[3])
+		addContent()
 	else
         print("Invalid command")
     end
@@ -88,6 +96,31 @@ function deleteArmorSet(s_name)
 		updateSpecialItems()
 	end
 end
+
+function helm_visibility(s_name, value)
+	if zas_ArmorList[UnitName("player")][s_name] then
+	
+		if value=="1" or value=="true" then
+			zas_ArmorList[UnitName("player")][s_name]["helmShown"] = true
+		else
+			zas_ArmorList[UnitName("player")][s_name]["helmShown"] = false
+		end
+	end
+end
+
+function cloak_visibility(s_name, value)
+
+	if zas_ArmorList[UnitName("player")][s_name] then
+	
+		if value=="1" or value=="true" then
+			zas_ArmorList[UnitName("player")][s_name]["cloakShown"] = true
+		else
+			zas_ArmorList[UnitName("player")][s_name]["cloakShown"] = false
+		end
+	end
+end
+
+
 
 function listArmorSets()
 	armorLists = ""
@@ -156,7 +189,6 @@ local function FindExactItemInBags(targetLink)
     end
     return nil
 end
-
 
 function loadArmorSet(s_name)
     local characterName = UnitName("player")
