@@ -1,3 +1,8 @@
+--Updated on 2/15/2026 to fix a small bug, where sometimes when the user had two weapons, only one would be de-equipped. [Function: loadArmorSet()]
+
+--Updated on 3/30/2026 to make the item link comparions less restrictive. This behavior
+--would sometimes cause the addon not to 'know' when you had an item in your bag. [Function: FindExactItemInBags(), ParseItemString(), loadArmorSet(), updateSpecialItems(), OnTooltipSetItem()]
+
 -------------------------------------
 	RED = "|cFFFF0000"
 	GREEN = "|cFF00FF00"
@@ -15,6 +20,9 @@
 
 
 --Functionality for loading, saving, and deleting armor sets, as well as macro functionality
+--
+-- PARAMETERS
+-- itemSlots: All of the bag slots for our user.
 local function UnequipItems(itemSlots)
     -- 1. Find all available empty slots in the bags (0-4)
     local emptySlots = {}
@@ -28,7 +36,7 @@ local function UnequipItems(itemSlots)
         end
     end
 
-    -- 2. Iterate through your target slots and unequip
+    -- 2. Iterate through target slots and unequip
     for i, inventorySlotID in ipairs(itemSlots) do
         -- Check if we still have empty slots available
         if #emptySlots > 0 then
@@ -48,6 +56,10 @@ local function UnequipItems(itemSlots)
     end
 end
 
+--Slash command functionality, handles things like /help, /save, /load, etc.
+--
+--PARAMETERS
+--str: the command that the user wants to try and run
 function cmdFunc(str)
 	if str=="" then
 		print(YELLOW.."HELP DESK")
@@ -89,6 +101,10 @@ function cmdFunc(str)
     end
 end
 
+--Deletes an armor set from our save data.
+--
+--PARAMETERS
+--s_name: The name of the set to delete.
 function deleteArmorSet(s_name)
 	if zas_ArmorList[UnitName("player")][s_name] then
 		zas_ArmorList[UnitName("player")][s_name] = nil
@@ -97,6 +113,11 @@ function deleteArmorSet(s_name)
 	end
 end
 
+-- Changes the visibility of the helmet for the player based on save data.
+--
+--PARAMETERS
+--s_name: The name of the set to change the visibility on
+--value: the value of the visibility
 function helm_visibility(s_name, value)
 	if zas_ArmorList[UnitName("player")][s_name] then
 	
@@ -108,6 +129,11 @@ function helm_visibility(s_name, value)
 	end
 end
 
+-- Changes the visibility of the cloak for the player based on save data.
+--
+--PARAMETERS
+--s_name: The name of the set to change the visibility on
+--value: the value of the visibility
 function cloak_visibility(s_name, value)
 
 	if zas_ArmorList[UnitName("player")][s_name] then
@@ -121,7 +147,8 @@ function cloak_visibility(s_name, value)
 end
 
 
-
+--Given our character, lists out all of the armor sets. Does so
+--with a print(), so that the player sees in the chat.
 function listArmorSets()
 	armorLists = ""
 	if not zas_ArmorList[UnitName("player")] then
@@ -141,9 +168,13 @@ function listArmorSets()
 	end
 end
 
+--Saves an armor set to our save data.
+--
+--PARAMETERS
+--s_name: the save name of our new set (exisitng names will be overriden)
 function saveArmorSet(s_name)
     local characterName = UnitName("player")
-    -- (Initializing tables logic remains the same)
+
 
     local gearSet = {}
 
@@ -169,19 +200,44 @@ function saveArmorSet(s_name)
     print("Armor set "..PURPLE..s_name.."|r has been saved for ".. YELLOW..UnitName("player"))
 end
 
+--New logic for finding our 'exact' item link. Instead of using the entire, exact link,
+--we separate it and look for only pieces that we need to make an 'exact' match. This method
+--avoids being overly strict about which piece we are trying to find.
+--
+--PARAMETERS
+--link: the link of the item string that we are trying to parse.
+local function ParseItemString(link)
+    if not link then return nil end
+    -- Captures: itemID, unknown1, enchantID (positions in the item string)
+    local itemID, unk1, enchantID = string.match(link, "item:(%d+):(%d*):(%d*)")
+    return itemID, enchantID
+end
+
+--Loops through the bag, attempting to find the item that we are trying to equip.
+--
+--PARAMETERS
+--targetLink: The link of the item that we are trying to get.
 local function FindExactItemInBags(targetLink)
     if not targetLink then return nil end
-    
-    -- Extract the raw item string (contains ID, Enchants, Suffixes)
-    -- This looks like "item:1234:56:0:0:0:0:789:..."
+
     local _, _, targetString = string.find(targetLink, "(item:[%d:]+)")
+    local targetItemID, targetEnchantID = ParseItemString(targetLink)
 
     for bag = 0, 4 do
         for slot = 1, C_Container.GetContainerNumSlots(bag) do
             local currentLink = C_Container.GetContainerItemLink(bag, slot)
             if currentLink then
                 local _, _, currentString = string.find(currentLink, "(item:[%d:]+)")
+
+                -- First try: exact full string match
                 if targetString == currentString then
+                    return bag, slot
+                end
+
+                -- Fallback: match on item ID + enchant ID only
+                local currentItemID, currentEnchantID = ParseItemString(currentLink)
+                if targetItemID and targetItemID == currentItemID
+                   and targetEnchantID == currentEnchantID then
                     return bag, slot
                 end
             end
@@ -190,6 +246,11 @@ local function FindExactItemInBags(targetLink)
     return nil
 end
 
+-- Loads the armor set, placing each item on the player, and de-equiping items if needed to match
+-- exactly what the player was wearing in their saved set.
+--
+--PARAMETERS
+--s_name: the name of the set to load.
 function loadArmorSet(s_name)
     local characterName = UnitName("player")
     local gearSet = zas_ArmorList and zas_ArmorList[characterName] and zas_ArmorList[characterName][s_name]
@@ -201,37 +262,65 @@ function loadArmorSet(s_name)
 
     local unequipQueue = {}
 
-    for slot = INVSLOT_HEAD, INVSLOT_TABARD do
-        local slotData = gearSet[slot]
+	-- Pass 1: Handle weapons first
+	for slot = INVSLOT_MAINHAND, INVSLOT_OFFHAND do
+		local slotData = gearSet[slot]
 
-        if slotData and slotData.link then
-            -- 1. Check if we're already wearing the EXACT item
-            local currentLink = GetInventoryItemLink("player", slot)
-            local _, _, savedStr = string.find(slotData.link, "(item:[%d:]+)")
-            local currentStr = currentLink and select(3, string.find(currentLink, "(item:[%d:]+)"))
+		if slotData and slotData.link then
+			local currentLink = GetInventoryItemLink("player", slot)
 
-            if savedStr ~= currentStr then
-                -- 2. Find the exact item in bags
-                local bag, bagSlot = FindExactItemInBags(slotData.link)
-                
-                if bag and bagSlot then
-                    ClearCursor()
-                    C_Container.PickupContainerItem(bag, bagSlot)
-                    EquipCursorItem(slot) 
-                    ClearCursor()
-                else
-                    print("Could not find item: " .. slotData.link)
-                end
-            end
-        else
-            -- Queue for unequipping if the slot should be empty
-            if GetInventoryItemID("player", slot) then
-                table.insert(unequipQueue, slot)
-            end
-        end
-    end
+			local savedItemID, savedEnchantID = ParseItemString(slotData.link)
+			local currentItemID, currentEnchantID = ParseItemString(currentLink)
 
-    -- Run your unequip logic for the empty slots
+			if savedItemID ~= currentItemID or savedEnchantID ~= currentEnchantID then
+				local bag, bagSlot = FindExactItemInBags(slotData.link)
+
+				if bag then
+					ClearCursor()
+					C_Container.PickupContainerItem(bag, bagSlot)
+					EquipCursorItem(slot)
+					ClearCursor()
+				else
+					print("Could not find weapon: "..slotData.link)
+				end
+			end
+		end
+	end
+
+	-- Pass 2: Handle everything else
+	for slot = INVSLOT_HEAD, INVSLOT_TABARD do
+		if slot ~= INVSLOT_MAINHAND and slot ~= INVSLOT_OFFHAND then
+			local slotData = gearSet[slot]
+
+			if slotData and slotData.link then
+				local currentLink = GetInventoryItemLink("player", slot)
+
+				local savedItemID, savedEnchantID = ParseItemString(slotData.link)
+				local currentItemID, currentEnchantID = ParseItemString(currentLink)
+
+				if savedItemID ~= currentItemID or savedEnchantID ~= currentEnchantID then
+					local bag, bagSlot = FindExactItemInBags(slotData.link)
+
+					if bag then
+						ClearCursor()
+						C_Container.PickupContainerItem(bag, bagSlot)
+						EquipCursorItem(slot)
+						ClearCursor()
+					else
+						print("Could not find item: "..slotData.link)
+					end
+				end
+
+			else
+				if GetInventoryItemID("player", slot) then
+					table.insert(unequipQueue, slot)
+				end
+			end
+		end
+	end
+
+
+
     if #unequipQueue > 0 then
         UnequipItems(unequipQueue)
     end
@@ -247,6 +336,7 @@ end
 local specialItems = {
 }
 
+--This function 'updates' the tooltips of items that are currently in a set.
 function updateSpecialItems()
     specialItems = {}
 
@@ -255,20 +345,19 @@ function updateSpecialItems()
 
     for setName, gearSet in pairs(zas_ArmorList[characterName]) do
         for slotId, slotData in pairs(gearSet) do
-            -- Ensure we are looking at an actual gear slot and it's not empty
             if type(slotId) == "number" and type(slotData) == "table" and slotData.link then
                 
-                -- Extract the raw item string to use as a unique key
-                local _, _, itemString = string.find(slotData.link, "(item:[%d:]+)")
-                
-                if itemString then
-                    if specialItems[itemString] then
-                        -- Append the set name if the item is in multiple sets
-                        if not string.find(specialItems[itemString], setName) then
-                            specialItems[itemString] = specialItems[itemString] .. ", " .. setName
+                -- Use itemID+enchantID as the key instead of the full string
+                local itemID, enchantID = ParseItemString(slotData.link)
+                local key = itemID and (itemID .. ":" .. (enchantID or "0"))
+
+                if key then
+                    if specialItems[key] then
+                        if not string.find(specialItems[key], setName) then
+                            specialItems[key] = specialItems[key] .. ", " .. setName
                         end
                     else
-                        specialItems[itemString] = setName
+                        specialItems[key] = setName
                     end
                 end
             end
@@ -277,7 +366,11 @@ function updateSpecialItems()
 end
 
 
---Simple helper function
+--Simple helper function. Given a string, check to see if a word is inside it.
+--
+--PARAMETERS
+--s_string: string we are searching
+--s_word: string we are looking for
 function containsWord(s_string, s_word)
     -- Make both strings lowercase for case-insensitive matching
     local lowerString = string.lower(s_string)
@@ -319,20 +412,20 @@ frame:SetScript("OnEvent", OnAddonLoaded)
 
 
 
-
+--Function that runs whenever the tooltip is set.
 local function OnTooltipSetItem(tooltip)
     local _, link = tooltip:GetItem()
     if not link then return end
 
-    -- Extract the string from the item currently being hovered
-    local _, _, itemString = string.find(link, "(item:[%d:]+)")
-    if not itemString then return end
+    local itemID, enchantID = ParseItemString(link)
+    local key = itemID and (itemID .. ":" .. (enchantID or "0"))
+    if not key then return end
 
-    -- Direct lookup in our new table
-    if specialItems and specialItems[itemString] then
-        tooltip:AddLine(specialItems[itemString], 1, 1, 0)
+    if specialItems and specialItems[key] then
+        tooltip:AddLine(specialItems[key], 1, 1, 0)
         tooltip:Show()
     end
 end
+
 GameTooltip:HookScript("OnTooltipSetItem", OnTooltipSetItem)
 ItemRefTooltip:HookScript("OnTooltipSetItem", OnTooltipSetItem)
